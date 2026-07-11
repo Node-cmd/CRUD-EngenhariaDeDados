@@ -3,13 +3,13 @@ const path = require('path');
 const db = require('./config/database');
 const enumsConfig = require('./config/enums');
 
-// Repositories PostgreSQL
-const pgUsuarioRepo  = require('./repositories/usuarioRepo');
-const pgCursoRepo    = require('./repositories/cursoRepo');
-const pgEstudanteRepo= require('./repositories/estudanteRepo');
-const pgVinculoRepo  = require('./repositories/vinculoRepo');
+// Repositories PostgreSQL (RDS) — Parte 1
+const pgUsuarioRepo  = require('./repositories/rds/usuarioRepo');
+const pgCursoRepo    = require('./repositories/rds/cursoRepo');
+const pgEstudanteRepo= require('./repositories/rds/estudanteRepo');
+const pgVinculoRepo  = require('./repositories/rds/vinculoRepo');
 
-// Repositories MongoDB
+// Repositories MongoDB — Parte 2
 const mgUsuarioRepo  = require('./repositories/mongo/usuarioRepo');
 const mgCursoRepo    = require('./repositories/mongo/cursoRepo');
 const mgEstudanteRepo= require('./repositories/mongo/estudanteRepo');
@@ -269,10 +269,8 @@ app.post('/api/vinculo', async (req, res) => {
     try {
         // Para mongo, precisamos do _id do estudante e do curso
         if (getTipo() === 'mongo') {
-            const mgEstudante = require('./repositories/mongo/estudanteRepo');
-            const mgCurso     = require('./repositories/mongo/cursoRepo');
-            const est = await mgEstudante.buscarPorMatricula(req.body.mat_estudante || req.body.matricula);
-            const cur = await mgCurso.buscarPorId(req.body.curso || req.body.idCurso);
+            const est = await mgEstudanteRepo.buscarPorMatricula(req.body.mat_estudante || req.body.matricula);
+            const cur = await mgCursoRepo.buscarPorId(req.body.curso || req.body.idCurso);
             await repos().vinculo.inserir({
                 estudanteId:  String(est._id),
                 cursoId:      String(cur._id),

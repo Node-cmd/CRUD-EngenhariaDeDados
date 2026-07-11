@@ -1,5 +1,5 @@
-const db = require('../config/database');
-const Estudante = require('../models/estudante');
+const db = require('../../config/database');
+const Estudante = require('../../models/rds/estudante');
 const usuarioRepo = require('./usuarioRepo');
 const vinculoRepo = require('./vinculoRepo');
 

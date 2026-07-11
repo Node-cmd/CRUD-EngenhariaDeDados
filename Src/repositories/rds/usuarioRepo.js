@@ -1,5 +1,5 @@
-const db = require('../config/database');
-const Usuario = require('../models/usuario');
+const db = require('../../config/database');
+const Usuario = require('../../models/rds/usuario');
 
 async function listarTodos() {
     const pool = db.getDbAtivo();

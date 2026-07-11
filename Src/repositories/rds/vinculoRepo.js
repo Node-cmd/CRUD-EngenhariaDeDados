@@ -1,5 +1,5 @@
-const db = require('../config/database');
-const Vinculo = require('../models/vinculo');
+const db = require('../../config/database');
+const Vinculo = require('../../models/rds/vinculo');
 
 async function listarTodos() {
     const pool = db.getDbAtivo();

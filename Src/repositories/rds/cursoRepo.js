@@ -1,5 +1,5 @@
-const db = require('../config/database');
-const Curso = require('../models/curso');
+const db = require('../../config/database');
+const Curso = require('../../models/rds/curso');
 
 async function listarTodos() {
     const pool = db.getDbAtivo();

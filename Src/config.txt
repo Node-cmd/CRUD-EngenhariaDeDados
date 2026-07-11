@@ -1,2 +1,0 @@
-MONGO_HOST=54.85.117.115:27017
-POSTGRES_HOST=postgres-ufs-ed.crhmjqwbzcke.us-east-1.rds.amazonaws.com
