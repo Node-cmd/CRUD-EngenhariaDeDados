@@ -83,15 +83,24 @@ function normalizarListaMongo(lista, entidade) {
         }
         if (entidade === 'estudante') {
             const u = obj.usuario || {};
+            const vinc = obj.vinculoAtivo || null;
             return {
-                mat_estudante: obj.matricula,
-                matricula:     obj.matricula,
-                cpf:           u.cpf || obj.cpf,
-                nome:          u.nome || obj.nome,
-                mc:            obj.mc,
-                ano_ingresso:  obj.anoIngresso,
-                status:        null,
-                nome_curso:    null
+                mat_estudante:   obj.matricula,
+                matricula:       obj.matricula,
+                cpf:             u.cpf || obj.cpf,
+                nome:            u.nome || obj.nome,
+                login:           u.login || '',
+                data_nascimento: u.dataNascimento || null,
+                email:           u.email    || [],
+                telefone:        u.telefone || [],
+                mc:              obj.mc,
+                ano_ingresso:    obj.anoIngresso,
+                anoIngresso:     obj.anoIngresso,
+                idVinculo:       vinc ? vinc.idVinculo : null,
+                curso:           vinc ? vinc.curso     : null,
+                idCurso:         vinc ? vinc.curso     : null,
+                nome_curso:      vinc ? vinc.nomeCurso : null,
+                status:          vinc ? vinc.status    : null
             };
         }
         if (entidade === 'vinculo') {

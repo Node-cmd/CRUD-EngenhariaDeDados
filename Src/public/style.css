@@ -109,3 +109,27 @@ tr.selecionado { background: #dcdde1 !important; font-weight: bold; }
     .main-header input { width: 100%; }
     .db-selector { flex-direction: column; }
 }
+
+/* Labels dos campos do formulário (usados nos formulários de Estudante/Vínculo) */
+.modal-content label { font-size: 12px; font-weight: 600; color: #7f8c8d; margin-bottom: -6px; text-transform: uppercase; }
+
+/* Painel de observação de chave estrangeira (mostra os dados do item referenciado) */
+.fk-preview {
+    font-size: 13px;
+    color: #34495e;
+    background: #f4f6f9;
+    border: 1px solid #dfe4ea;
+    border-left: 3px solid #3498db;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-top: -6px;
+}
+
+/* Campos de ID somente-leitura na edição (não é mais possível alterá-los) */
+.form-field.campo-readonly,
+.form-field[readonly],
+.form-field:disabled {
+    background: #ecf0f1 !important;
+    color: #7f8c8d !important;
+    cursor: not-allowed;
+}

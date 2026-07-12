@@ -6,16 +6,23 @@
  *  Mapeamento fiel do esquema SQL da universidade para MongoDB.
  *
  *  Tabela SQL de origem:
- *    CURSO(idCurso PK, nome NOT NULL, grau NOT NULL CHECK(...),
- *          turno NOT NULL CHECK(...), campus, nivel CHECK(...))
+ *    CURSO(idCurso PK, nome NOT NULL, grau tipo_grau, turno tipo_turno NOT NULL,
+ *          campus, nivel tipo_nivel)
+ *
+ *  Os valores de enum abaixo replicam EXATAMENTE os tipos criados no dump
+ *  (Src/database/universidade-dump-engdados.sql):
+ *    CREATE TYPE universidade.tipo_grau  AS ENUM ('Bacharelado', 'Licenciatura Plena');
+ *    CREATE TYPE universidade.tipo_turno AS ENUM ('Matutino', 'Vespertino', 'Noturno', 'Turno Indefinido');
+ *    CREATE TYPE universidade.tipo_nivel AS ENUM ('Graduação', 'Mestrado', 'Doutorado', 'Lato');
+ *  (mesmos valores usados em Src/config/enums.js, que alimenta os dropdowns)
  *
  *  RESTRIÇÕES IMPLEMENTADAS:
  *
  *  ✅ Chave Primária  → _id automático do MongoDB
- *  ✅ NOT NULL        → required: true em nome, grau e turno
- *  ✅ Domínio grau    → enum: Bacharelado | Licenciatura | Tecnólogo
- *  ✅ Domínio turno   → enum: Matutino | Vespertino | Noturno | Integral
- *  ✅ Domínio nivel   → enum: Graduação | Pós-Graduação
+ *  ✅ NOT NULL        → required: true em nome e turno (grau é opcional no SQL)
+ *  ✅ Domínio grau    → enum: Bacharelado | Licenciatura Plena
+ *  ✅ Domínio turno   → enum: Matutino | Vespertino | Noturno | Turno Indefinido
+ *  ✅ Domínio nivel   → enum: Graduação | Mestrado | Doutorado | Lato
  * ================================================================
  */
 
@@ -30,18 +37,18 @@ const cursoSchema = new mongoose.Schema(
         },
         grau: {
             type: String,
-            required: [true, 'Grau é obrigatório'],
             enum: {
-                values: ['Bacharelado', 'Licenciatura', 'Tecnólogo'],
-                message: 'Grau inválido. Use: Bacharelado, Licenciatura ou Tecnólogo'
-            }
+                values: ['Bacharelado', 'Licenciatura Plena', null],
+                message: 'Grau inválido. Use: Bacharelado ou Licenciatura Plena'
+            },
+            default: null
         },
         turno: {
             type: String,
             required: [true, 'Turno é obrigatório'],
             enum: {
-                values: ['Matutino', 'Vespertino', 'Noturno', 'Integral'],
-                message: 'Turno inválido. Use: Matutino, Vespertino, Noturno ou Integral'
+                values: ['Matutino', 'Vespertino', 'Noturno', 'Turno Indefinido'],
+                message: 'Turno inválido. Use: Matutino, Vespertino, Noturno ou Turno Indefinido'
             }
         },
         campus: {
@@ -52,8 +59,8 @@ const cursoSchema = new mongoose.Schema(
         nivel: {
             type: String,
             enum: {
-                values: ['Graduação', 'Pós-Graduação', null],
-                message: 'Nível inválido. Use: Graduação ou Pós-Graduação'
+                values: ['Graduação', 'Mestrado', 'Doutorado', 'Lato', null],
+                message: 'Nível inválido. Use: Graduação, Mestrado, Doutorado ou Lato'
             },
             default: null
         }

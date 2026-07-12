@@ -6,16 +6,19 @@
  *  Mapeamento fiel do esquema SQL da universidade para MongoDB.
  *
  *  Tabela SQL de origem:
- *    VINCULO(idVinculo PK,
- *            matricula FK→ESTUDANTE NOT NULL,
- *            idCurso   FK→CURSO     NOT NULL,
- *            dataIngresso, status NOT NULL CHECK(...), dataSaida)
+ *    VINCULO(idVinculo PK, mat_estudante FK→ESTUDANTE, curso FK→CURSO,
+ *            data_entrada, status status_estudante, data_saida)
+ *
+ *  O enum abaixo replica EXATAMENTE o tipo criado no dump
+ *  (Src/database/universidade-dump-engdados.sql):
+ *    CREATE TYPE universidade.status_estudante AS ENUM ('Ativo', 'Cancelada', 'Formando', 'Graduado');
+ *  (mesmos valores usados em Src/config/enums.js, que alimenta o dropdown)
  *
  *  RESTRIÇÕES IMPLEMENTADAS:
  *
  *  ✅ Chave Primária  → _id automático do MongoDB
- *  ✅ NOT NULL        → estudante, curso e status obrigatórios
- *  ✅ Domínio status  → enum: Ativo | Trancado | Concluído
+ *  ✅ NOT NULL        → estudante e curso obrigatórios (status tem default)
+ *  ✅ Domínio status  → enum: Ativo | Cancelada | Formando | Graduado
  *  ✅ Integridade Ref → estudante ref 'estudantes', curso ref 'cursos'
  *                       Verificação explícita feita no vinculoRepo
  * ================================================================
@@ -44,13 +47,13 @@ const vinculoSchema = new mongoose.Schema(
             default: Date.now
         },
 
-        // Domínio: os três estados possíveis de um vínculo acadêmico
+        // Domínio: os quatro estados possíveis de um vínculo acadêmico
         status: {
             type: String,
             required: [true, 'Status é obrigatório'],
             enum: {
-                values: ['Ativo', 'Trancado', 'Concluído'],
-                message: 'Status inválido. Use: Ativo, Trancado ou Concluído'
+                values: ['Ativo', 'Cancelada', 'Formando', 'Graduado'],
+                message: 'Status inválido. Use: Ativo, Cancelada, Formando ou Graduado'
             },
             default: 'Ativo'
         },

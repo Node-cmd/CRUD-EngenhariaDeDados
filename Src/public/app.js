@@ -7,6 +7,35 @@ let bancoAtivo = null; // 'postgres' | 'mongo'
 let configAtual = {}; // Configurações de host
 let enumsDisponíveis = {}; // Enums carregados do servidor
 
+// Caches das listas usadas para popular os dropdowns de chave estrangeira
+// (curso, estudante, usuário) e seus painéis de "observação" (preview).
+let cacheCursosFK = [];
+let cacheEstudantesFK = [];
+let cacheUsuariosFK = [];
+
+// ─── Chave primária por entidade ──────────────────────────────────────────────
+// IMPORTANTE: cada entidade tem sua própria lista de aliases de PK, checada
+// SÓ dentro do escopo daquela entidade. Antes havia uma única lista
+// compartilhada entre todas as entidades (ex.: ['cpf', 'idCurso', ...,
+// 'mat_estudante', ..., 'idVinculo', ...]) — como uma linha de estudante
+// também carrega o campo 'cpf' (do usuário) e uma linha de vínculo também
+// carrega 'mat_estudante' (do estudante), o sistema pegava sempre o
+// primeiro alias que batesse na lista global, e não o campo certo da
+// própria entidade. Isso fazia editar/deletar estudante usar o CPF em vez
+// da matrícula, e editar/deletar vínculo usar a matrícula em vez do ID real
+// do vínculo — em ambos os bancos.
+const PK_ALIASES = {
+    usuario:   ['cpf'],
+    curso:     ['idCurso', 'idcurso'],
+    estudante: ['mat_estudante', 'matricula'],
+    vinculo:   ['idVinculo', 'idvinculo']
+};
+
+function getIdDoItem(item) {
+    const valor = getValorCampo(item, PK_ALIASES[entidadeAtiva] || [], '');
+    return valor !== '' && valor !== null && valor !== undefined ? String(valor) : '';
+}
+
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 function normalizarLista(valor) {
     if (!valor) return [];
@@ -293,75 +322,44 @@ function getTituloEntidade() {
 // ─── Campos de Formulário ─────────────────────────────────────────────────────
 
 /**
- * Mapeia IDs de formulário para nomes de campos da entidade
+ * Mapeia IDs de formulário para nomes de campos de enum da entidade
+ * (usado só por usuario/curso — estudante/vinculo resolvem o enum de status
+ * diretamente via enumsDisponíveis.vinculo.status, pois esse enum pertence
+ * à entidade Vínculo mesmo quando usado dentro do formulário de Estudante).
  */
 function getMapaFormulario() {
     const mapa = {
-        usuario: {
-            'form-cpf': 'cpf',
-            'form-nome': 'nome',
-            'form-data': 'data_nascimento',
-            'form-email': 'email',
-            'form-telefone': 'telefone',
-            'form-login': 'login',
-            'form-senha': 'senha'
-        },
-        curso: {
-            'form-nome': 'nome',
-            'form-grau': 'grau',
-            'form-turno': 'turno',
-            'form-campus': 'campus',
-            'form-nivel': 'nivel'
-        },
-        estudante: {
-            'form-matricula': 'matricula',
-            'form-cpf': 'cpf',
-            'form-nome': 'nome',
-            'form-login': 'login',
-            'form-senha': 'senha',
-            'form-mc': 'mc',
-            'form-ano': 'anoIngresso',
-            'form-curso': 'idCurso',
-            'form-status': 'status'
-        },
-        vinculo: {
-            'form-idvinculo': 'idVinculo',
-            'form-matricula': 'matricula',
-            'form-curso': 'idCurso',
-            'form-data-entrada': 'dataIngresso',
-            'form-status': 'status',
-            'form-data-saida': 'dataSaida'
-        }
+        usuario: { 'form-cpf': 'cpf', 'form-nome': 'nome', 'form-data': 'data_nascimento',
+                   'form-email': 'email', 'form-telefone': 'telefone', 'form-login': 'login', 'form-senha': 'senha' },
+        curso:   { 'form-nome': 'nome', 'form-grau': 'grau', 'form-turno': 'turno',
+                   'form-campus': 'campus', 'form-nivel': 'nivel' }
     };
     return mapa[entidadeAtiva] || mapa.usuario;
 }
 
-/**
- * Obtém o nome do campo da entidade pelo ID do formulário
- */
 function getCampoEntidade(formId) {
     const mapa = getMapaFormulario();
     return mapa[formId] || formId;
 }
 
-/**
- * Obtém as opções de enum para um campo do formulário
- */
 function getOpcoesEnum(formId) {
     const nomeCampo = getCampoEntidade(formId);
     return (enumsDisponíveis[entidadeAtiva]?.[nomeCampo]) || [];
 }
 
+// Campos "simples" (sem FK) — apenas usuario e curso usam essa definição
+// genérica. estudante e vinculo têm layout próprio (ver montarFormulário*)
+// por causa dos seletores de chave estrangeira e do toggle de usuário.
 function getCamposFormulario() {
     const campos = {
         usuario: [
-            { id: 'form-cpf',      label: 'CPF',               type: 'text',     required: true },
+            { id: 'form-cpf',      label: 'CPF',               type: 'text',     required: true, pk: true },
             { id: 'form-nome',     label: 'Nome',              type: 'text',     required: true },
             { id: 'form-data',     label: 'Data de Nascimento',type: 'date' },
             { id: 'form-email',    label: 'E-mails (vírgula)', type: 'text' },
             { id: 'form-telefone', label: 'Telefones (vírgula)',type: 'text' },
             { id: 'form-login',    label: 'Login',             type: 'text',     required: true },
-            { id: 'form-senha',    label: 'Senha',             type: 'password', required: true }
+            { id: 'form-senha',    label: 'Senha',             type: 'password', required: modoFormulario === 'ADD' }
         ],
         curso: [
             { id: 'form-nome',   label: 'Nome',  type: 'text', required: true },
@@ -369,64 +367,284 @@ function getCamposFormulario() {
             { id: 'form-turno',  label: 'Turno', type: 'select', required: true },
             { id: 'form-campus', label: 'Campus',type: 'text' },
             { id: 'form-nivel',  label: 'Nível', type: 'select' }
-        ],
-        estudante: [
-            { id: 'form-matricula', label: 'Matrícula',        type: 'text',    required: true },
-            { id: 'form-cpf',       label: 'CPF',              type: 'text',    required: true },
-            { id: 'form-nome',      label: 'Nome',             type: 'text',    required: true },
-            { id: 'form-login',     label: 'Login',            type: 'text',    required: true },
-            { id: 'form-senha',     label: 'Senha',            type: 'password',required: true },
-            { id: 'form-mc',        label: 'MC',               type: 'text' },
-            { id: 'form-ano',       label: 'Ano de Ingresso',  type: 'number' },
-            { id: 'form-curso',     label: 'ID do Curso',      type: 'text',    required: true },
-            { id: 'form-status',    label: 'Status do Vínculo',type: 'text',    required: true }
-        ],
-        vinculo: [
-            { id: 'form-idvinculo',    label: 'ID do Vínculo (auto)',      type: 'text' },
-            { id: 'form-matricula',    label: 'Matrícula do Estudante',    type: 'text', required: true },
-            { id: 'form-curso',        label: 'ID do Curso',               type: 'text', required: true },
-            { id: 'form-data-entrada', label: 'Data de Entrada',           type: 'date' },
-            { id: 'form-status',       label: 'Status',                    type: 'select', required: true },
-            { id: 'form-data-saida',   label: 'Data de Saída',             type: 'date' }
         ]
     };
     return campos[entidadeAtiva] || campos.usuario;
 }
 
-function renderizarFormulario() {
+// ─── Helpers de dropdown de chave estrangeira (FK) com painel de observação ──
+
+async function carregarListaFK(endpoint) {
+    try {
+        const res = await fetch(endpoint);
+        if (!res.ok) return [];
+        const dados = await res.json();
+        return Array.isArray(dados) ? dados : [];
+    } catch (err) {
+        console.warn(`Erro ao carregar ${endpoint}:`, err);
+        return [];
+    }
+}
+
+/** Cria um <select> populado a partir de uma lista de itens (curso/estudante/usuário). */
+function montarSelectFK({ id, itens, idAliases, labelFn, placeholder, required }) {
+    const select = document.createElement('select');
+    select.id = id;
+    select.name = id;
+    select.className = 'form-field';
+    select.required = Boolean(required);
+
+    const optVazia = document.createElement('option');
+    optVazia.value = '';
+    optVazia.textContent = placeholder;
+    optVazia.disabled = true;
+    optVazia.selected = true;
+    select.appendChild(optVazia);
+
+    itens.forEach(item => {
+        const idItem = getValorCampo(item, idAliases, '');
+        const opt = document.createElement('option');
+        opt.value = String(idItem);
+        opt.textContent = labelFn(item);
+        select.appendChild(opt);
+    });
+
+    return select;
+}
+
+/** Cria o painel de observação (read-only) que mostra os dados do item referenciado. */
+function montarPreviewFK(id) {
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = 'fk-preview';
+    div.textContent = 'Selecione uma opção acima para ver os detalhes.';
+    return div;
+}
+
+function atualizarPreviewFK(previewId, itens, idAliases, valorSelecionado, previewFn) {
+    const div = document.getElementById(previewId);
+    if (!div) return;
+    const item = itens.find(i => String(getValorCampo(i, idAliases, '')) === String(valorSelecionado));
+    div.textContent = item ? previewFn(item) : 'Nenhum item selecionado.';
+}
+
+const FK_CURSO = {
+    idAliases: ['idCurso', 'idcurso'],
+    labelFn: c => `${c.nome} — ${c.turno || 's/ turno'}${c.grau ? ' · ' + c.grau : ''}`,
+    previewFn: c => `Turno: ${c.turno || '—'}  ·  Grau: ${c.grau || '—'}  ·  Campus: ${c.campus || '—'}  ·  Nível: ${c.nivel || '—'}`
+};
+const FK_ESTUDANTE = {
+    idAliases: ['mat_estudante', 'matricula'],
+    labelFn: e => `${e.mat_estudante || e.matricula} — ${e.nome || 's/ nome'}`,
+    previewFn: e => `CPF: ${e.cpf || '—'}  ·  Ano de ingresso: ${e.ano_ingresso ?? e.anoIngresso ?? '—'}  ·  MC: ${e.mc ?? '—'}`
+};
+const FK_USUARIO = {
+    idAliases: ['cpf'],
+    labelFn: u => `${u.cpf} — ${u.nome}`,
+    previewFn: u => `Login: ${u.login || '—'}  ·  E-mail: ${normalizarLista(u.email).join(', ') || '—'}`
+};
+
+// ─── Construção dos formulários de Estudante e Vínculo (com FKs) ─────────────
+
+async function montarFormularioEstudante(container) {
+    const editando = modoFormulario === 'EDIT';
+
+    [cacheCursosFK, cacheUsuariosFK] = await Promise.all([
+        carregarListaFK('/api/curso'),
+        editando ? Promise.resolve([]) : carregarListaFK('/api/usuario')
+    ]);
+
+    // Matrícula — chave primária do estudante: editável só ao criar
+    const lblMat = document.createElement('label');
+    lblMat.textContent = 'Matrícula';
+    const inputMat = document.createElement('input');
+    inputMat.id = 'form-matricula'; inputMat.type = 'text'; inputMat.className = 'form-field';
+    inputMat.placeholder = 'Matrícula'; inputMat.required = true;
+    if (editando) { inputMat.readOnly = true; inputMat.classList.add('campo-readonly'); }
+    container.append(lblMat, inputMat);
+
+    if (!editando) {
+        // Toggle "usar usuário existente" — só faz sentido ao cadastrar
+        const toggleDiv = document.createElement('div');
+        toggleDiv.className = 'config-toggle';
+        toggleDiv.innerHTML = `<label><input type="checkbox" id="form-usar-usuario-existente"> Usar um usuário já cadastrado</label>`;
+        container.appendChild(toggleDiv);
+
+        const selectUsuario = montarSelectFK({
+            id: 'form-usuario-existente', itens: cacheUsuariosFK, idAliases: FK_USUARIO.idAliases,
+            labelFn: FK_USUARIO.labelFn, placeholder: 'Selecione o usuário existente', required: false
+        });
+        selectUsuario.style.display = 'none';
+        const previewUsuario = montarPreviewFK('form-usuario-existente-preview');
+        previewUsuario.style.display = 'none';
+        container.append(selectUsuario, previewUsuario);
+
+        selectUsuario.addEventListener('change', () => {
+            atualizarPreviewFK('form-usuario-existente-preview', cacheUsuariosFK, FK_USUARIO.idAliases, selectUsuario.value, FK_USUARIO.previewFn);
+            // Ao escolher um usuário existente, o CPF passa a ser o dele (somente leitura)
+            const cpfInput = document.getElementById('form-cpf');
+            if (cpfInput) { cpfInput.value = selectUsuario.value; cpfInput.readOnly = true; cpfInput.classList.add('campo-readonly'); }
+        });
+
+        toggleDiv.querySelector('input[type="checkbox"]').addEventListener('change', e => {
+            const usando = e.target.checked;
+            selectUsuario.style.display = usando ? 'block' : 'none';
+            previewUsuario.style.display = usando ? 'block' : 'none';
+            ['form-cpf', 'form-nome', 'form-login', 'form-senha'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (usando) {
+                    el.disabled = (id !== 'form-cpf'); // cpf fica readonly (preenchido pelo select), os demais desabilitados
+                    el.required = false;
+                    if (id !== 'form-cpf') el.value = '';
+                    if (id === 'form-cpf') { el.readOnly = true; el.classList.add('campo-readonly'); el.value = ''; }
+                } else {
+                    el.disabled = false;
+                    el.readOnly = false;
+                    el.classList.remove('campo-readonly');
+                    el.required = (id === 'form-cpf' || id === 'form-nome' || id === 'form-login' || id === 'form-senha');
+                }
+            });
+        });
+    }
+
+    // CPF / Nome / Login / Senha do usuário associado
+    const camposUsuario = [
+        { id: 'form-cpf',   label: 'CPF',   type: 'text',     required: true },
+        { id: 'form-nome',  label: 'Nome',  type: 'text',     required: true },
+        { id: 'form-login', label: 'Login', type: 'text',     required: true },
+        { id: 'form-senha', label: editando ? 'Nova Senha (deixe em branco para manter)' : 'Senha', type: 'password', required: !editando }
+    ];
+    camposUsuario.forEach(campo => {
+        const input = document.createElement('input');
+        input.id = campo.id; input.type = campo.type; input.placeholder = campo.label;
+        input.required = Boolean(campo.required); input.className = 'form-field';
+        if (editando && campo.id === 'form-cpf') { input.readOnly = true; input.classList.add('campo-readonly'); }
+        container.appendChild(input);
+    });
+
+    // MC / Ano de Ingresso
+    ['form-mc', 'form-ano'].forEach(id => {
+        const input = document.createElement('input');
+        input.id = id; input.className = 'form-field';
+        if (id === 'form-mc') { input.type = 'text'; input.placeholder = 'MC (0 a 10)'; }
+        else { input.type = 'number'; input.placeholder = 'Ano de Ingresso'; }
+        container.appendChild(input);
+    });
+
+    // Curso — dropdown + preview (em vez de ID digitado)
+    const lblCurso = document.createElement('label');
+    lblCurso.textContent = 'Curso';
+    const selectCurso = montarSelectFK({
+        id: 'form-curso', itens: cacheCursosFK, idAliases: FK_CURSO.idAliases,
+        labelFn: FK_CURSO.labelFn, placeholder: 'Selecione o curso', required: true
+    });
+    const previewCurso = montarPreviewFK('form-curso-preview');
+    selectCurso.addEventListener('change', () =>
+        atualizarPreviewFK('form-curso-preview', cacheCursosFK, FK_CURSO.idAliases, selectCurso.value, FK_CURSO.previewFn));
+    container.append(lblCurso, selectCurso, previewCurso);
+
+    // Status do vínculo — select alimentado pelo mesmo enum de Vínculo
+    const lblStatus = document.createElement('label');
+    lblStatus.textContent = 'Status do Vínculo';
+    const selectStatus = document.createElement('select');
+    selectStatus.id = 'form-status'; selectStatus.className = 'form-field'; selectStatus.required = true;
+    const optVazia = document.createElement('option');
+    optVazia.value = ''; optVazia.textContent = 'Selecione o status'; optVazia.disabled = true; optVazia.selected = true;
+    selectStatus.appendChild(optVazia);
+    (enumsDisponíveis.vinculo?.status || []).forEach(op => {
+        const opt = document.createElement('option'); opt.value = op.value; opt.textContent = op.label;
+        selectStatus.appendChild(opt);
+    });
+    container.append(lblStatus, selectStatus);
+}
+
+async function montarFormularioVinculo(container) {
+    [cacheEstudantesFK, cacheCursosFK] = await Promise.all([
+        carregarListaFK('/api/estudante'),
+        carregarListaFK('/api/curso')
+    ]);
+
+    // Estudante — dropdown + preview (em vez de matrícula digitada)
+    const lblEst = document.createElement('label');
+    lblEst.textContent = 'Estudante';
+    const selectEst = montarSelectFK({
+        id: 'form-matricula', itens: cacheEstudantesFK, idAliases: FK_ESTUDANTE.idAliases,
+        labelFn: FK_ESTUDANTE.labelFn, placeholder: 'Selecione o estudante', required: true
+    });
+    const previewEst = montarPreviewFK('form-matricula-preview');
+    selectEst.addEventListener('change', () =>
+        atualizarPreviewFK('form-matricula-preview', cacheEstudantesFK, FK_ESTUDANTE.idAliases, selectEst.value, FK_ESTUDANTE.previewFn));
+    container.append(lblEst, selectEst, previewEst);
+
+    // Curso — dropdown + preview (em vez de ID digitado)
+    const lblCurso = document.createElement('label');
+    lblCurso.textContent = 'Curso';
+    const selectCurso = montarSelectFK({
+        id: 'form-curso', itens: cacheCursosFK, idAliases: FK_CURSO.idAliases,
+        labelFn: FK_CURSO.labelFn, placeholder: 'Selecione o curso', required: true
+    });
+    const previewCurso = montarPreviewFK('form-curso-preview');
+    selectCurso.addEventListener('change', () =>
+        atualizarPreviewFK('form-curso-preview', cacheCursosFK, FK_CURSO.idAliases, selectCurso.value, FK_CURSO.previewFn));
+    container.append(lblCurso, selectCurso, previewCurso);
+
+    // Status
+    const lblStatus = document.createElement('label');
+    lblStatus.textContent = 'Status';
+    const selectStatus = document.createElement('select');
+    selectStatus.id = 'form-status'; selectStatus.className = 'form-field'; selectStatus.required = true;
+    const optVazia = document.createElement('option');
+    optVazia.value = ''; optVazia.textContent = 'Selecione o status'; optVazia.disabled = true; optVazia.selected = true;
+    selectStatus.appendChild(optVazia);
+    (enumsDisponíveis.vinculo?.status || []).forEach(op => {
+        const opt = document.createElement('option'); opt.value = op.value; opt.textContent = op.label;
+        selectStatus.appendChild(opt);
+    });
+    container.append(lblStatus, selectStatus);
+
+    // Datas
+    [['form-data-entrada', 'Data de Entrada'], ['form-data-saida', 'Data de Saída']].forEach(([id, label]) => {
+        const lbl = document.createElement('label'); lbl.textContent = label;
+        const input = document.createElement('input');
+        input.id = id; input.type = 'date'; input.className = 'form-field';
+        container.append(lbl, input);
+    });
+}
+
+async function renderizarFormulario() {
     const container = document.getElementById('campos-formulario');
     if (!container) return;
     container.innerHTML = '';
-    
+
+    if (entidadeAtiva === 'estudante') return montarFormularioEstudante(container);
+    if (entidadeAtiva === 'vinculo')   return montarFormularioVinculo(container);
+
+    // usuario / curso — layout genérico simples (sem FK)
     getCamposFormulario().forEach(campo => {
-        // Se é um campo de select (enum)
         if (campo.type === 'select') {
             const select = document.createElement('select');
             select.id = campo.id;
             select.name = campo.id;
             select.required = Boolean(campo.required);
             select.className = 'form-field';
-            
-            // Adiciona opção vazia
+
             const optionVazia = document.createElement('option');
             optionVazia.value = '';
             optionVazia.textContent = `Selecione ${campo.label.toLowerCase()}`;
             optionVazia.disabled = true;
             optionVazia.selected = true;
             select.appendChild(optionVazia);
-            
-            // Adiciona opções do enum
-            const opcoes = getOpcoesEnum(campo.id);
-            opcoes.forEach(opcao => {
+
+            getOpcoesEnum(campo.id).forEach(opcao => {
                 const option = document.createElement('option');
                 option.value = opcao.value;
                 option.textContent = opcao.label;
                 select.appendChild(option);
             });
-            
+
             container.appendChild(select);
         } else {
-            // Campos normais (text, password, date, etc.)
             const input = document.createElement('input');
             input.id = campo.id;
             input.name = campo.id;
@@ -434,6 +652,10 @@ function renderizarFormulario() {
             input.placeholder = campo.label;
             input.required = Boolean(campo.required);
             input.className = 'form-field';
+            if (campo.pk && modoFormulario === 'EDIT') {
+                input.readOnly = true;
+                input.classList.add('campo-readonly');
+            }
             container.appendChild(input);
         }
     });
@@ -447,7 +669,7 @@ function preencherFormulario(item) {
         'form-email':       ['email'],
         'form-telefone':    ['telefone'],
         'form-login':       ['login'],
-        'form-senha':       ['senha'],
+        'form-senha':       [], // senha nunca é pré-preenchida (deixe em branco = mantém a atual)
         'form-grau':        ['grau'],
         'form-turno':       ['turno'],
         'form-campus':      ['campus'],
@@ -457,24 +679,36 @@ function preencherFormulario(item) {
         'form-ano':         ['ano_ingresso', 'anoIngresso'],
         'form-curso':       ['curso', 'idCurso', 'idcurso'],
         'form-status':      ['status'],
-        'form-idvinculo':   ['idVinculo', 'idvinculo'],
         'form-data-entrada':['data_entrada', 'dataIngresso'],
         'form-data-saida':  ['data_saida', 'dataSaida']
     };
 
-    getCamposFormulario().forEach(campo => {
-        const input = document.getElementById(campo.id);
+    Object.keys(aliasesPorCampo).forEach(id => {
+        const input = document.getElementById(id);
         if (!input) return;
-        const valor = getValorCampo(item, aliasesPorCampo[campo.id] || [], '');
-        if (input.type === 'date' && valor) {
+        const valor = getValorCampo(item, aliasesPorCampo[id], '');
+        if (input.tagName === 'SELECT') {
+            input.value = valor || '';
+        } else if (input.type === 'date' && valor) {
             input.value = String(valor).substring(0, 10);
         } else {
             input.value = Array.isArray(valor) ? valor.join(', ') : (valor || '');
         }
     });
+
+    // Atualiza os painéis de observação das FKs já preenchidas
+    if (entidadeAtiva === 'estudante' || entidadeAtiva === 'vinculo') {
+        atualizarPreviewFK('form-curso-preview', cacheCursosFK, FK_CURSO.idAliases, getValorCampoInput('form-curso'), FK_CURSO.previewFn);
+    }
+    if (entidadeAtiva === 'vinculo') {
+        atualizarPreviewFK('form-matricula-preview', cacheEstudantesFK, FK_ESTUDANTE.idAliases, getValorCampoInput('form-matricula'), FK_ESTUDANTE.previewFn);
+    }
 }
 
 function getPayloadFormulario() {
+    const usandoUsuarioExistente = entidadeAtiva === 'estudante' &&
+        document.getElementById('form-usar-usuario-existente')?.checked;
+
     const payloads = {
         usuario: {
             cpf:             getValorCampoInput('form-cpf').trim(),
@@ -484,38 +718,44 @@ function getPayloadFormulario() {
             email:           normalizarLista(getValorCampoInput('form-email')),
             telefone:        normalizarLista(getValorCampoInput('form-telefone')),
             login:           getValorCampoInput('form-login').trim(),
-            senha:           getValorCampoInput('form-senha')
+            // Em branco = mantém a senha atual (a API ignora a chave quando ausente)
+            ...(getValorCampoInput('form-senha') ? { senha: getValorCampoInput('form-senha') } : {})
         },
         curso: {
             nome:   getValorCampoInput('form-nome').trim(),
-            grau:   getValorCampoInput('form-grau').trim(),
-            turno:  getValorCampoInput('form-turno').trim(),
-            campus: getValorCampoInput('form-campus').trim(),
-            nivel:  getValorCampoInput('form-nivel').trim()
+            grau:   getValorCampoInput('form-grau').trim() || null,
+            turno:  getValorCampoInput('form-turno').trim() || null,
+            campus: getValorCampoInput('form-campus').trim() || null,
+            // Campo opcional: select vazio manda "" — precisa virar null, pois
+            // o Mongo só aceita os valores do enum ou null, nunca string vazia.
+            nivel:  getValorCampoInput('form-nivel').trim() || null
         },
         estudante: {
-            matricula:    getValorCampoInput('form-matricula').trim(),
-            mat_estudante:getValorCampoInput('form-matricula').trim(),
-            cpf:          getValorCampoInput('form-cpf').trim(),
-            mc:           getValorCampoInput('form-mc') || null,
-            ano_ingresso: getValorCampoInput('form-ano') || null,
-            anoIngresso:  getValorCampoInput('form-ano') || null,
-            nome:         getValorCampoInput('form-nome').trim(),
-            login:        getValorCampoInput('form-login').trim(),
-            senha:        getValorCampoInput('form-senha') || '123456',
-            curso:        getValorCampoInput('form-curso') || null,
-            idCurso:      getValorCampoInput('form-curso') || null,
-            status:       getValorCampoInput('form-status').trim() || 'Ativo'
+            matricula:     getValorCampoInput('form-matricula').trim(),
+            mat_estudante: getValorCampoInput('form-matricula').trim(),
+            cpf:           getValorCampoInput('form-cpf').trim(),
+            mc:            getValorCampoInput('form-mc') || null,
+            ano_ingresso:  getValorCampoInput('form-ano') || null,
+            anoIngresso:   getValorCampoInput('form-ano') || null,
+            nome:          getValorCampoInput('form-nome').trim(),
+            login:         getValorCampoInput('form-login').trim(),
+            // Em branco = mantém a senha atual (nunca mais reseta para um valor padrão sozinho).
+            // Só cai no padrão '123456' ao CRIAR um estudante novo sem usuário existente.
+            ...(getValorCampoInput('form-senha')
+                ? { senha: getValorCampoInput('form-senha') }
+                : (modoFormulario === 'ADD' && !usandoUsuarioExistente ? { senha: '123456' } : {})),
+            curso:    getValorCampoInput('form-curso') || null,
+            idCurso:  getValorCampoInput('form-curso') || null,
+            status:   getValorCampoInput('form-status').trim() || null
         },
         vinculo: {
-            idVinculo:    getValorCampoInput('form-idvinculo') || null,
-            mat_estudante:getValorCampoInput('form-matricula').trim(),
-            matricula:    getValorCampoInput('form-matricula').trim(),
-            curso:        getValorCampoInput('form-curso') || null,
-            idCurso:      getValorCampoInput('form-curso') || null,
-            data_entrada: getValorCampoInput('form-data-entrada') || null,
-            status:       getValorCampoInput('form-status').trim(),
-            data_saida:   getValorCampoInput('form-data-saida') || null
+            mat_estudante: getValorCampoInput('form-matricula').trim(),
+            matricula:     getValorCampoInput('form-matricula').trim(),
+            curso:         getValorCampoInput('form-curso') || null,
+            idCurso:       getValorCampoInput('form-curso') || null,
+            data_entrada:  getValorCampoInput('form-data-entrada') || null,
+            status:        getValorCampoInput('form-status').trim() || null,
+            data_saida:    getValorCampoInput('form-data-saida') || null
         }
     };
     return payloads[entidadeAtiva] || payloads.usuario;
@@ -560,7 +800,7 @@ function renderizarLinhas(lista) {
     corpoTabela.innerHTML = '';
     lista.forEach(item => {
         const tr = document.createElement('tr');
-        const itemId = getValorCampo(item, ['cpf', 'idCurso', 'idcurso', 'mat_estudante', 'matricula', 'idVinculo', 'idvinculo'], '');
+        const itemId = getIdDoItem(item);
         let conteudo = '';
 
         if (entidadeAtiva === 'usuario') {
@@ -628,23 +868,21 @@ function selecionarEntidade(novaEntidade) {
 const form  = document.getElementById('form-usuario');
 const modal = document.getElementById('modal-formulario');
 
-document.getElementById('open-add-modal').addEventListener('click', () => {
+document.getElementById('open-add-modal').addEventListener('click', async () => {
     modoFormulario = 'ADD';
     document.getElementById('modal-titulo').innerText = `Cadastrar Novo ${getTituloEntidade()}`;
-    renderizarFormulario();
     form.reset();
+    await renderizarFormulario();
     modal.style.display = 'flex';
 });
 
-document.getElementById('open-edit-modal').addEventListener('click', () => {
+document.getElementById('open-edit-modal').addEventListener('click', async () => {
     if (!getIdSelecionado()) return alert(`Selecione um ${getTituloEntidade().toLowerCase()} na tabela primeiro!`);
     modoFormulario = 'EDIT';
     document.getElementById('modal-titulo').innerText = `Editar ${getTituloEntidade()} Existente`;
-    const item = cacheDados.find(d =>
-        String(getValorCampo(d, ['cpf', 'idCurso', 'idcurso', 'mat_estudante', 'matricula', 'idVinculo', 'idvinculo'], '')) === getIdSelecionado()
-    );
+    const item = cacheDados.find(d => getIdDoItem(d) === getIdSelecionado());
     if (!item) return alert(`${getTituloEntidade()} não encontrado no cache local.`);
-    renderizarFormulario();
+    await renderizarFormulario();
     preencherFormulario(item);
     modal.style.display = 'flex';
 });
