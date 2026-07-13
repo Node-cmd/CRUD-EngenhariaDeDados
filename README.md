@@ -4,6 +4,12 @@ Trabalho prático da disciplina de Engenharia de Dados: uma aplicação Node.js/
 
 O trabalho foi dividido em três partes, e a organização do repositório segue exatamente essa divisão — veja [Estrutura do repositório](#estrutura-do-repositório).
 
+## Menbros do grupo
+- Edno Bezerra Nascimento Junior
+- Esdras Marques Silva Gois
+- Ian Marcel Santos Santana
+
+---
 ## Sumário
 
 - [Visão geral](#visão-geral)
