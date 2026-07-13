@@ -1,10 +1,8 @@
 -- =====================================================================
--- ESQUEMA ESTRELA
+-- ESQUEMA ESTRELA AJUSTADO
 -- Parte 3.1 - Trabalho Prático de Engenharia de Dados
 -- =====================================================================
 -- Deve ser executado no PostgreSQL hospedado no RDS.
--- Cria um schema separado ("dw_universidade") do schema OLTP da Parte 1
--- ("universidade").
 -- =====================================================================
 
 DROP SCHEMA IF EXISTS dw_universidade CASCADE;
@@ -21,7 +19,6 @@ CREATE TABLE dw_universidade.dim_tempo (
     sk_tempo     SERIAL PRIMARY KEY,
     ano          SMALLINT NOT NULL,
     periodo      SMALLINT NOT NULL,          -- 1 ou 2
-    ano_periodo  VARCHAR(6) NOT NULL,         -- ex: '2023.1'
     CONSTRAINT uq_dim_tempo UNIQUE (ano, periodo)
 );
 
@@ -30,8 +27,8 @@ CREATE TABLE dw_universidade.dim_tempo (
 -- ---------------------------------------------------------------------
 CREATE TABLE dw_universidade.dim_departamento (
     sk_departamento    SERIAL PRIMARY KEY,
-    cod_departamento   VARCHAR(5) NOT NULL,
-    nome_departamento  VARCHAR(50) NOT NULL,
+    cod_departamento   VARCHAR(10) NOT NULL,
+    nome_departamento  VARCHAR(120) NOT NULL,
     CONSTRAINT uq_dim_departamento UNIQUE (cod_departamento)
 );
 
@@ -49,10 +46,10 @@ CREATE TABLE dw_universidade.dim_campus (
 -- ---------------------------------------------------------------------
 CREATE TABLE dw_universidade.dim_disciplina (
     sk_disciplina     SERIAL PRIMARY KEY,
-    cod_disciplina    VARCHAR(8) NOT NULL,
-    nome_disciplina   VARCHAR(100) NOT NULL,
+    cod_disciplina    VARCHAR(20) NOT NULL,
+    nome_disciplina   VARCHAR(150) NOT NULL,
     cr_total          SMALLINT,
-    cod_depto_origem  VARCHAR(5),           -- atributo descritivo (degenerado)
+    cod_depto_origem  VARCHAR(10),           -- atributo descritivo (degenerado)
     CONSTRAINT uq_dim_disciplina UNIQUE (cod_disciplina)
 );
 
@@ -60,20 +57,19 @@ CREATE TABLE dw_universidade.dim_disciplina (
 -- Dimensão Professor
 -- ---------------------------------------------------------------------
 CREATE TABLE dw_universidade.dim_professor (
-    sk_professor               SERIAL PRIMARY KEY,
-    matricula_professor        VARCHAR(10) NOT NULL,
-    nome_professor             VARCHAR(100) NOT NULL,
-    tipo_jornada_trabalho      VARCHAR(5),   -- '20h', '40h', 'DE'
-    formacao                   VARCHAR(20),  -- Graduação, Especialização, Mestrado, Doutorado
-    cod_departamento_lotacao   VARCHAR(5),   -- atributo descritivo (degenerado)
-    CONSTRAINT uq_dim_professor UNIQUE (matricula_professor)
+    sk_professor                SERIAL PRIMARY KEY,
+    nome_professor              VARCHAR(100) NOT NULL,
+    tipo_jornada_trabalho       VARCHAR(30),   -- 'dedicação exclusiva'...
+    formacao                    VARCHAR(20),   -- Graduação, Especialização, Mestrado, Doutorado
+    nome_departamento_lotacao   VARCHAR(120), 
+    CONSTRAINT uq_dim_professor UNIQUE (nome_professor)
 );
 
 -- ---------------------------------------------------------------------
 -- Linhas "Não informado" (boas práticas de DW: FK da fato nunca fica nula)
 -- ---------------------------------------------------------------------
-INSERT INTO dw_universidade.dim_tempo (ano, periodo, ano_periodo)
-    VALUES (0, 0, 'N/D');
+INSERT INTO dw_universidade.dim_tempo (ano, periodo)
+    VALUES (0, 0);
 
 INSERT INTO dw_universidade.dim_departamento (cod_departamento, nome_departamento)
     VALUES ('N/D', 'Não informado');
@@ -84,8 +80,8 @@ INSERT INTO dw_universidade.dim_campus (nome_campus)
 INSERT INTO dw_universidade.dim_disciplina (cod_disciplina, nome_disciplina, cr_total, cod_depto_origem)
     VALUES ('N/D', 'Não informado', NULL, NULL);
 
-INSERT INTO dw_universidade.dim_professor (matricula_professor, nome_professor, tipo_jornada_trabalho, formacao, cod_departamento_lotacao)
-    VALUES ('N/D', 'Não informado', NULL, NULL, NULL);
+INSERT INTO dw_universidade.dim_professor (nome_professor, tipo_jornada_trabalho, formacao, nome_departamento_lotacao)
+    VALUES ('Não informado', NULL, NULL, NULL);
 
 -- =====================================================================
 -- FATO
@@ -98,7 +94,7 @@ CREATE TABLE dw_universidade.fato_turma (
     sk_departamento    INT NOT NULL REFERENCES dw_universidade.dim_departamento(sk_departamento),
     sk_tempo           INT NOT NULL REFERENCES dw_universidade.dim_tempo(sk_tempo),
     sk_campus          INT NOT NULL REFERENCES dw_universidade.dim_campus(sk_campus),
-    numero_turma       VARCHAR(10),           -- dimensão degenerada: turmas paralelas
+    numero_turma       VARCHAR(20),           -- dimensão degenerada: turmas paralelas
     qtd_matriculados   INT NOT NULL,
     media_notas        NUMERIC(4,2),          -- nulo quando não disponível
     qtd_aprovados      INT,                   -- nulo quando não disponível
@@ -114,15 +110,12 @@ CREATE INDEX idx_fato_turma_tempo        ON dw_universidade.fato_turma(sk_tempo)
 CREATE INDEX idx_fato_turma_campus       ON dw_universidade.fato_turma(sk_campus);
 
 -- =====================================================================
--- USUÁRIO DE INTEGRAÇÃO (para as rotinas de ETL no Apache Hop)
+-- USUÁRIO DE INTEGRAÇÃO
 -- =====================================================================
-CREATE USER etl_hop WITH PASSWORD 'SENHAFORTE';
 GRANT USAGE ON SCHEMA dw_universidade TO etl_hop;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA dw_universidade TO etl_hop;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA dw_universidade TO etl_hop;
 
--- Garante que tabelas/sequências criadas FUTURAMENTE neste schema já nasçam
--- com essas permissões, sem precisar rodar os GRANTs de novo manualmente.
 ALTER DEFAULT PRIVILEGES IN SCHEMA dw_universidade
     GRANT SELECT, INSERT, UPDATE ON TABLES TO etl_hop;
 ALTER DEFAULT PRIVILEGES IN SCHEMA dw_universidade
